@@ -1,0 +1,19 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/home/ye/_workspace_imx6ull/linux/linux-imx/include",
+                "/home/ye/_workspace_imx6ull/linux/linux-imx/arch/arm/include",
+                "/home/ye/_workspace_imx6ull/linux/linux-imx/arch/arm/include/generated"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}

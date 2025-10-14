@@ -1,0 +1,2 @@
+/home/ye/_workspace_imx6ull/imx6ull_alpha_driver/1_char_dev_base/char_dev_base.ko
+/home/ye/_workspace_imx6ull/imx6ull_alpha_driver/1_char_dev_base/char_dev_base.o
