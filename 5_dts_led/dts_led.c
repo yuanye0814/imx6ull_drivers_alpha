@@ -18,6 +18,7 @@
 #include <linux/proc_fs.h> // create_proc_entry
 #include <linux/seq_file.h> // seq_printf
 #include <linux/of.h>
+#include <linux/of_address.h> // of_iomap
 #include <linux/slab.h> // kmalloc, kfree
 
 #define NAME "dts_led"
@@ -68,12 +69,8 @@ static void __iomem *gpio1_gdir;
 
 
 
-char led_data[] = "kernel data - led\n";
-
 char read_buf[100];
 char write_buf[100];
-
-u32 *bright_values;
 
 
 void led_on(void)
@@ -183,6 +180,7 @@ static const struct file_operations led_fops = {
 		status = "okay";
 		#address-cells = <1>;
 		#size-cells = <1>;
+		ranges;
 		dts_led_0: led@0 {
 			compatible = "dts_led,led";
 			reg = < 0X020C406C 0x4 /* CCM_CCGR1_BASE */
@@ -201,7 +199,6 @@ static int __init led_init(void)
 {
     uint32_t reg = 0;
     int rc;
-    int i;
     const char *str;
 
 	// printk(KERN_DEBUG NAME " initializing\n");
@@ -231,54 +228,56 @@ static int __init led_init(void)
     }
     printk(NAME " status: %s\n", str);
 
-    // get child node led@0
-    struct device_node *led_node = of_get_child_by_name(dts_led.np, "led");
-    if (!led_node) {
-        printk(NAME " led@0 child node not found\n");
-        return -ENODEV;
+    // debug: list all child nodes
+    struct device_node *child;
+    printk(NAME " listing all child nodes:\n");
+    for_each_child_of_node(dts_led.np, child) {
+        printk(NAME " child node: %s\n", child->name);
     }
+
+    // get child node led@0
+    struct device_node *led_node = of_find_node_by_name(dts_led.np, "led@0");
+    if (!led_node) {
+        // try without @0
+        led_node = of_find_node_by_name(dts_led.np, "led");
+        if (!led_node) {
+            printk(NAME " led node not found\n");
+            return -ENODEV;
+        }
+    }
+    printk(NAME " found led@0 child node\n");
     
-    // get reg property from led@0 node
-    const __be32 *reg_prop;
+    // verify reg property exists
     int reg_len;
-    reg_prop = of_get_property(led_node, "reg", &reg_len);
+    const void *reg_prop = of_get_property(led_node, "reg", &reg_len);
     if (!reg_prop) {
         printk(NAME " reg property not found\n");
         of_node_put(led_node);
         return -ENODEV;
     }
+    printk(NAME " reg property found, length: %d\n", reg_len);
+
+    // try of_iomap now that ranges property is added
+    printk(NAME " testing of_iomap with ranges property\n");
+    ccm_ccgr1 = of_iomap(led_node, 0);
+    sw_mux_gpio1_io03 = of_iomap(led_node, 1);
+    sw_pad_gpio1_io03 = of_iomap(led_node, 2);
+    gpio1_dr = of_iomap(led_node, 3);
+    gpio1_gdir = of_iomap(led_node, 4);
     
-    // parse reg values (address, size pairs)
-    int num_regs = reg_len / (sizeof(u32) * 2);
-    printk(NAME " found %d register entries\n", num_regs);
-
-
-    for (i = 0; i < num_regs; i++) {
-        u32 addr = be32_to_cpu(reg_prop[i * 2]);
-        u32 size = be32_to_cpu(reg_prop[i * 2 + 1]);
-        printk(NAME " reg[%d]: addr=0x%08x, size=0x%x\n", i, addr, size);
-    }
+    printk(NAME " of_iomap results:\n");
+    printk(NAME " ccm_ccgr1: %p\n", ccm_ccgr1);
+    printk(NAME " sw_mux_gpio1_io03: %p\n", sw_mux_gpio1_io03);
+    printk(NAME " sw_pad_gpio1_io03: %p\n", sw_pad_gpio1_io03);
+    printk(NAME " gpio1_dr: %p\n", gpio1_dr);
+    printk(NAME " gpio1_gdir: %p\n", gpio1_gdir);
     
     of_node_put(led_node);
-
-    if(num_regs != 5)
-    {
-        printk(NAME " reg property read failed\n");
-        return -ENODEV;
+    
+    if (!ccm_ccgr1 || !sw_mux_gpio1_io03 || !sw_pad_gpio1_io03 || !gpio1_dr || !gpio1_gdir) {
+        printk(NAME " iomap failed\n");
+        goto err_ioremap;
     }
-
-
-    // remap addr
-    ccm_ccgr1 = ioremap(be32_to_cpu(reg_prop[0]), be32_to_cpu(reg_prop[1]));
-    if (!ccm_ccgr1) goto err_ioremap;
-    sw_mux_gpio1_io03 = ioremap(be32_to_cpu(reg_prop[2]), be32_to_cpu(reg_prop[3]));
-    if (!sw_mux_gpio1_io03) goto err_ioremap;
-    sw_pad_gpio1_io03 = ioremap(be32_to_cpu(reg_prop[4]), be32_to_cpu(reg_prop[5]));
-    if (!sw_pad_gpio1_io03) goto err_ioremap;
-    gpio1_dr = ioremap(be32_to_cpu(reg_prop[6]), be32_to_cpu(reg_prop[7]));
-    if (!gpio1_dr) goto err_ioremap;
-    gpio1_gdir = ioremap(be32_to_cpu(reg_prop[8]), be32_to_cpu(reg_prop[9]));
-    if (!gpio1_gdir) goto err_ioremap;
 
 
     // clk
@@ -389,11 +388,11 @@ static void __exit led_exit(void)
     unregister_chrdev_region(dts_led.devid, DTS_LED_COUNT);
 
     // unmap addr
-    iounmap(ccm_ccgr1);
-    iounmap(sw_mux_gpio1_io03);
-    iounmap(sw_pad_gpio1_io03);
-    iounmap(gpio1_dr);
-    iounmap(gpio1_gdir);
+    if(ccm_ccgr1) iounmap(ccm_ccgr1);
+    if(sw_mux_gpio1_io03) iounmap(sw_mux_gpio1_io03);
+    if(sw_pad_gpio1_io03) iounmap(sw_pad_gpio1_io03);
+    if(gpio1_dr) iounmap(gpio1_dr);
+    if(gpio1_gdir) iounmap(gpio1_gdir);
 
 }
 
