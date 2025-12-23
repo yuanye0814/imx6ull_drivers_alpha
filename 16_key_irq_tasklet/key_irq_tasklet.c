@@ -98,11 +98,11 @@ ssize_t key_read (struct file *filp, char __user *buf, size_t count, loff_t *ppo
     
     for(i=0;i<KEY_COUNT;i++)
     {
-        if(atomic_read(&key.key_descs[i].key_read_flag) == 1)
+        if(atomic_read(&dev->key_descs[i].key_read_flag) == 1)
         {
             gpio_val[0] = i;
-            gpio_val[1] = atomic_read(&key.key_descs[i].key_state);
-            atomic_set(&key.key_descs[i].key_read_flag, 0);
+            gpio_val[1] = atomic_read(&dev->key_descs[i].key_state);
+            atomic_set(&dev->key_descs[i].key_read_flag, 0);
 
             break;
         }
@@ -399,6 +399,12 @@ err_find_node:
         del_timer_sync(&key.key_descs[i].timer);
     }
 
+    // kill tasklet
+    for(i=0;i<KEY_COUNT;i++)
+    {
+        tasklet_kill(&key.key_descs[i].tasklet);
+    }
+
     return -ENODEV;
 }
 
@@ -431,6 +437,12 @@ static void __exit key_exit(void)
     for(i=0;i<KEY_COUNT;i++)
     {
         del_timer_sync(&key.key_descs[i].timer);
+    }
+
+    // kill tasklet
+    for(i=0;i<KEY_COUNT;i++)
+    {
+        tasklet_kill(&key.key_descs[i].tasklet);
     }
 }
 
