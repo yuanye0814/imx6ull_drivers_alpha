@@ -66,9 +66,6 @@ struct key_dev{
 
 struct key_dev key;
 
-char read_buf[100];
-char write_buf[100];
-
 
 /* The various file operations we support. */
 int key_open (struct inode *inode, struct file *filp)
@@ -115,17 +112,33 @@ ssize_t key_read (struct file *filp, char __user *buf, size_t count, loff_t *ppo
     // wait event
     // wait_event(dev->wq, is_any_key_pressed(&key));
 
-    wait_event_interruptible(dev->wq, is_any_key_pressed(dev));
+    // wait_event_interruptible(dev->wq, is_any_key_pressed(dev));
+
+    DECLARE_WAITQUEUE(wait, current);
+    add_wait_queue(&dev->wq, &wait);
+
+    __set_current_state(TASK_INTERRUPTIBLE);
+    schedule();
+
+    __set_current_state(TASK_RUNNING);
+    remove_wait_queue(&dev->wq, &wait);
+
+    // check signal
+    if(signal_pending(current))
+    {
+        return -EINTR;
+    }
+
 
     // printk(NAME " after wait_event\n");
     
     for(i=0;i<KEY_COUNT;i++)
     {
-        if(atomic_read(&key.key_descs[i].key_read_flag) == 1)
+        if(atomic_read(&dev->key_descs[i].key_read_flag) == 1)
         {
             gpio_val[0] = i;
-            gpio_val[1] = atomic_read(&key.key_descs[i].key_state);
-            atomic_set(&key.key_descs[i].key_read_flag, 0);
+            gpio_val[1] = atomic_read(&dev->key_descs[i].key_state);
+            atomic_set(&dev->key_descs[i].key_read_flag, 0);
 
             break;
         }
@@ -423,8 +436,10 @@ err_find_node:
 static void __exit key_wait_exit(void)
 {
     int i;
-    // printk(KERN_DEBUG NAME " exit\n");
     printk(NAME " exit\n");
+
+    // wake up all waiting processes before cleanup
+    wake_up_all(&key.wq);
 
     // cleanup in reverse order of initialization
     device_destroy(key.key_class, key.devid);
