@@ -1,0 +1,19 @@
+# Kernel module build files
+*.ko
+*.o
+*.mod.c
+*.mod.o
+*.cmd
+.tmp_versions/
+Module.symvers
+modules.order
+
+# Application executables
+*_app
+*_test
+
+# IDE and editor files
+.vscode/
+*.swp
+*.swo
+.DS_Store
